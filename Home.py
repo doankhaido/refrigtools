@@ -34,7 +34,7 @@ st.divider()
 # --- Tool cards -----------------------------------------------------------
 st.markdown("### Available tools")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("#### 🧪 Refrigerant Properties")
@@ -63,6 +63,20 @@ diagnosing undercharge or overcharge conditions.
 """
     )
     st.page_link("pages/2_Superheat_and_Subcooling_Check.py", label="Open tool →", icon="🔧")
+
+with col3:
+    st.markdown("#### 📋 P-T Table")
+    st.markdown(
+        """
+Pressure–temperature reference table for saturated refrigerants. Adjustable
+range and step, CSV export. Zeotropic blends show bubble and dew points
+separately with glide.
+
+**Use it for:** field reference, superheat/subcooling lookups, design sizing,
+manual calculations.
+"""
+    )
+    st.page_link("pages/3_PT_Table.py", label="Open tool →", icon="📋")
 
 st.divider()
 
