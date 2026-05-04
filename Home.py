@@ -34,9 +34,9 @@ st.divider()
 # --- Tool cards -----------------------------------------------------------
 st.markdown("### Available tools")
 
-col1, col2, col3 = st.columns(3)
+row1_col1, row1_col2 = st.columns(2)
 
-with col1:
+with row1_col1:
     st.markdown("#### 🧪 Refrigerant Properties")
     st.markdown(
         """
@@ -50,7 +50,7 @@ transcritical CO2 systems, comparing refrigerants.
     )
     st.page_link("pages/1_Refrigerant_Properties.py", label="Open tool →", icon="🧪")
 
-with col2:
+with row1_col2:
     st.markdown("#### 🔧 Superheat / Subcooling")
     st.markdown(
         """
@@ -64,7 +64,26 @@ diagnosing undercharge or overcharge conditions.
     )
     st.page_link("pages/2_Superheat_and_Subcooling_Check.py", label="Open tool →", icon="🔧")
 
-with col3:
+row2_col1, row2_col2 = st.columns(2)
+
+with row2_col1:
+    st.markdown("#### 📋 P-T Table")
+    # ... existing P-T content stays ...
+    st.page_link("pages/3_PT_Table.py", label="Open tool →", icon="📋")
+
+with row2_col2:
+    st.markdown("#### 🔄 Cycle Calculator")
+    st.markdown(
+        """
+Vapour-compression cycle analysis with state points, COP, mass flow,
+and a labelled schematic. Configurable evap/cond temps, superheat,
+subcooling, and isentropic efficiency.
+
+**Use it for:** system design, performance estimation, comparing
+operating conditions, training material.
+"""
+    )
+    st.page_link("pages/4_Cycle_Calculator.py", label="Open tool →", icon="🔄")
     st.markdown("#### 📋 P-T Table")
     st.markdown(
         """
