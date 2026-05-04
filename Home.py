@@ -30,7 +30,7 @@ that turns a calculator into a decision tool.
 )
 
 st.divider()
-
+st.caption("📖 New users: see the [Documentation](/Documentation) page for guides on each tool")
 # --- Tool cards -----------------------------------------------------------
 st.markdown("### Available tools")
 
