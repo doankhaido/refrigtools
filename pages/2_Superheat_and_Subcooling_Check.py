@@ -14,7 +14,6 @@ hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-[data-testid="stToolbar"] {visibility: hidden !important;}
 .stDeployButton {display: none;}
 </style>
 """
