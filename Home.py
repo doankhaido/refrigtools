@@ -64,8 +64,7 @@ diagnosing undercharge or overcharge conditions.
     )
     st.page_link("pages/2_Superheat_and_Subcooling_Check.py", label="Open tool →", icon="🔧")
 
-row2_col1, row2_col2 = st.columns(2)
-
+row2_col1, row2_col2, row2_col3 = st.columns(3)
 with row2_col1:
     st.markdown("#### 📋 P-T Table")
     # ... existing P-T content stays ...
@@ -96,7 +95,19 @@ manual calculations.
 """
     )
     st.page_link("pages/3_PT_Table.py", label="Open tool →", icon="📋")
+with row2_col3:
+    st.markdown("#### ❄️ Load Calculator")
+    st.markdown(
+        """
+Preliminary refrigeration load estimate based on ASHRAE methodology.
+Covers transmission, product, infiltration, and internal loads with
+safety and diversity factors.
 
+**Use it for:** preliminary sizing, learning ASHRAE methodology,
+quick estimates. Not a substitute for full design calculations.
+"""
+    )
+    st.page_link("pages/5_Load_Calculator.py", label="Open tool →", icon="❄️")
 st.divider()
 
 # --- About / why this exists ---------------------------------------------

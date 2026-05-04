@@ -2,3 +2,5 @@ streamlit
 CoolProp
 plotly
 pandas
+requests
+fpdf2
