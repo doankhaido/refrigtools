@@ -180,23 +180,106 @@ with tab_prod:
     st.subheader("Product load")
     st.caption("Heat removed from product. ASHRAE Eq. 5-9.")
 
+    # Product database — typical values for common products
+    # Reference: ASHRAE Handbook - Refrigeration, Ch. 19 Table 3 (verify before engineering use)
+    PRODUCTS = {
+        "Custom (manual entry)": None,
+        "--- Meat & Poultry ---": None,
+        "Beef, lean": {"cp_above": 3.52, "cp_below": 1.88, "t_freeze": -2.2, "water_pct": 70, "latent": 234},
+        "Beef, fatty": {"cp_above": 2.89, "cp_below": 1.68, "t_freeze": -2.2, "water_pct": 49, "latent": 164},
+        "Pork, lean": {"cp_above": 2.85, "cp_below": 1.59, "t_freeze": -2.2, "water_pct": 57, "latent": 191},
+        "Lamb": {"cp_above": 3.18, "cp_below": 1.68, "t_freeze": -1.7, "water_pct": 61, "latent": 204},
+        "Chicken": {"cp_above": 3.32, "cp_below": 1.77, "t_freeze": -2.8, "water_pct": 66, "latent": 220},
+        "Fish, white (lean)": {"cp_above": 3.60, "cp_below": 1.93, "t_freeze": -2.2, "water_pct": 80, "latent": 267},
+        "Fish, fatty (salmon)": {"cp_above": 3.18, "cp_below": 1.74, "t_freeze": -2.2, "water_pct": 64, "latent": 214},
+        "--- Dairy ---": None,
+        "Milk, whole": {"cp_above": 3.85, "cp_below": 2.04, "t_freeze": -0.6, "water_pct": 87, "latent": 290},
+        "Cheese, hard": {"cp_above": 2.10, "cp_below": 1.34, "t_freeze": -8.3, "water_pct": 37, "latent": 124},
+        "Butter": {"cp_above": 1.51, "cp_below": 1.05, "t_freeze": -1.1, "water_pct": 16, "latent": 53},
+        "Ice cream": {"cp_above": 3.18, "cp_below": 1.88, "t_freeze": -5.6, "water_pct": 63, "latent": 210},
+        "--- Fruits & Vegetables ---": None,
+        "Apples": {"cp_above": 3.81, "cp_below": 1.93, "t_freeze": -1.1, "water_pct": 84, "latent": 281},
+        "Bananas": {"cp_above": 3.35, "cp_below": 1.76, "t_freeze": -0.8, "water_pct": 75, "latent": 251},
+        "Oranges": {"cp_above": 3.81, "cp_below": 1.93, "t_freeze": -0.8, "water_pct": 87, "latent": 291},
+        "Strawberries": {"cp_above": 3.89, "cp_below": 1.93, "t_freeze": -0.8, "water_pct": 90, "latent": 301},
+        "Tomatoes": {"cp_above": 3.98, "cp_below": 1.97, "t_freeze": -0.5, "water_pct": 94, "latent": 314},
+        "Potatoes": {"cp_above": 3.43, "cp_below": 1.80, "t_freeze": -1.7, "water_pct": 78, "latent": 261},
+        "Lettuce": {"cp_above": 4.02, "cp_below": 1.97, "t_freeze": -0.2, "water_pct": 95, "latent": 317},
+        "Carrots": {"cp_above": 3.77, "cp_below": 1.89, "t_freeze": -1.4, "water_pct": 88, "latent": 294},
+        "--- Seafood ---": None,
+        "Prawns/shrimp": {"cp_above": 3.64, "cp_below": 1.93, "t_freeze": -2.2, "water_pct": 76, "latent": 254},
+        "--- Bakery ---": None,
+        "Bread, white": {"cp_above": 2.93, "cp_below": 1.42, "t_freeze": -7.2, "water_pct": 36, "latent": 121},
+        "--- Other ---": None,
+        "Water (reference)": {"cp_above": 4.18, "cp_below": 2.10, "t_freeze": 0.0, "water_pct": 100, "latent": 334},
+    }
+
+    selected_product = st.selectbox(
+        "Product type",
+        options=list(PRODUCTS.keys()),
+        index=list(PRODUCTS.keys()).index("Beef, lean"),
+        help="Select a product to auto-fill properties, or 'Custom' to enter manually. "
+             "Values are typical reference data — verify against ASHRAE Ch. 19 for engineering use.",
+    )
+
+    # Get preset values if available
+    preset = PRODUCTS.get(selected_product)
+    is_preset = preset is not None
+
     c1, c2 = st.columns(2)
     with c1:
-        product_name = st.text_input("Product description", value="Frozen meat (lean beef)")
+        product_name = st.text_input(
+            "Product description",
+            value=selected_product if is_preset else "Custom product",
+        )
         mass_per_pallet = st.number_input("Mass per pallet (kg)", value=1134.0, step=10.0, min_value=1.0, max_value=10000.0)
         pallets_per_day = st.number_input("Pallets per day", value=420.0, step=10.0, min_value=0.0, max_value=10000.0)
         pulldown_hours = st.number_input("Pull-down time (h)", value=24.0, step=1.0, min_value=0.5, max_value=72.0)
     with c2:
         t_entry = st.number_input("Entry temperature (°C)", value=-15.0, step=1.0, min_value=-40.0, max_value=60.0)
         t_target = st.number_input("Target temperature (°C)", value=-23.0, step=1.0, min_value=-40.0, max_value=20.0)
-        c1_specific = st.number_input("Cp above freezing (kJ/kg·K)", value=3.52, step=0.1, min_value=0.5, max_value=5.0)
-        c2_specific = st.number_input("Cp below freezing (kJ/kg·K)", value=1.88, step=0.1, min_value=0.5, max_value=5.0)
+        c1_specific = st.number_input(
+            "Cp above freezing (kJ/kg·K)",
+            value=preset["cp_above"] if is_preset else 3.52,
+            step=0.05,
+            min_value=0.5,
+            max_value=5.0,
+            help="Specific heat of unfrozen product. Auto-filled from product selection.",
+        )
+        c2_specific = st.number_input(
+            "Cp below freezing (kJ/kg·K)",
+            value=preset["cp_below"] if is_preset else 1.88,
+            step=0.05,
+            min_value=0.5,
+            max_value=5.0,
+            help="Specific heat of frozen product. Roughly half of Cp above freezing for most foods.",
+        )
 
     c3, c4 = st.columns(2)
     with c3:
-        t_freeze = st.number_input("Freezing temperature (°C)", value=-2.0, step=0.5, min_value=-30.0, max_value=10.0)
+        t_freeze = st.number_input(
+            "Freezing temperature (°C)",
+            value=preset["t_freeze"] if is_preset else -2.0,
+            step=0.5,
+            min_value=-30.0,
+            max_value=10.0,
+            help="Most foods freeze between -3 and -0.5 °C. Auto-filled from product selection.",
+        )
     with c4:
-        latent_heat = st.number_input("Latent heat of fusion (kJ/kg)", value=233.0, step=10.0, min_value=0.0, max_value=400.0)
+        latent_heat = st.number_input(
+            "Latent heat of fusion (kJ/kg)",
+            value=float(preset["latent"]) if is_preset else 233.0,
+            step=5.0,
+            min_value=0.0,
+            max_value=400.0,
+            help="Water content × 334 kJ/kg. Auto-filled from product water content.",
+        )
+
+    if is_preset:
+        st.caption(
+            f"📊 Reference values for **{selected_product}**: water content ≈ {preset['water_pct']}%. "
+            f"Verify against ASHRAE Ch. 19 Table 3 for engineering use."
+        )
 
     mass_total_per_day = mass_per_pallet * pallets_per_day
     mass_per_hour = mass_total_per_day / pulldown_hours
