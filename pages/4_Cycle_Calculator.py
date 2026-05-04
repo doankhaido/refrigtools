@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 from CoolProp.CoolProp import PropsSI
 
 # --- Page config -----------------------------------------------------------
@@ -58,6 +60,67 @@ def kpa_to_unit(kpa, unit):
 def is_zeotropic(fluid_string):
     return fluid_string.startswith("HEOS::")
 
+# --- Saturation dome computation ------------------------------------------
+def compute_saturation_dome(fluid, n_points=80):
+    """Return arrays of enthalpy (kJ/kg) and pressure (kPa) along
+    saturated liquid (Q=0) and saturated vapour (Q=1) curves."""
+    try:
+        t_triple = PropsSI("Ttriple", fluid)
+    except Exception:
+        t_triple = PropsSI("Tmin", fluid)
+    t_crit = PropsSI("Tcrit", fluid)
+
+    # Sample more densely near the critical point
+    temps = np.concatenate([
+        np.linspace(t_triple + 1, t_crit * 0.95, int(n_points * 0.7)),
+        np.linspace(t_crit * 0.95, t_crit * 0.999, int(n_points * 0.3)),
+    ])
+
+    h_liq, h_vap, p_sat = [], [], []
+    for t in temps:
+        try:
+            h_l = PropsSI("H", "T", t, "Q", 0, fluid) / 1000
+            h_v = PropsSI("H", "T", t, "Q", 1, fluid) / 1000
+            p = PropsSI("P", "T", t, "Q", 0, fluid) / 1000
+            h_liq.append(h_l)
+            h_vap.append(h_v)
+            p_sat.append(p)
+        except Exception:
+            continue
+
+    return np.array(h_liq), np.array(h_vap), np.array(p_sat)
+
+def compute_zeotropic_dome(fluid, n_points=80):
+    """For zeotropic blends — bubble and dew curves at each pressure
+    differ from each other along the dome. Return four arrays:
+    h_liq (Q=0), h_vap (Q=1), p_bubble, p_dew."""
+    try:
+        t_triple = PropsSI("Ttriple", fluid)
+    except Exception:
+        t_triple = PropsSI("Tmin", fluid)
+    t_crit = PropsSI("Tcrit", fluid)
+
+    temps = np.concatenate([
+        np.linspace(t_triple + 1, t_crit * 0.95, int(n_points * 0.7)),
+        np.linspace(t_crit * 0.95, t_crit * 0.999, int(n_points * 0.3)),
+    ])
+
+    h_liq, h_vap, p_bubble, p_dew = [], [], [], []
+    for t in temps:
+        try:
+            h_l = PropsSI("H", "T", t, "Q", 0, fluid) / 1000
+            h_v = PropsSI("H", "T", t, "Q", 1, fluid) / 1000
+            p_b = PropsSI("P", "T", t, "Q", 0, fluid) / 1000
+            p_d = PropsSI("P", "T", t, "Q", 1, fluid) / 1000
+            h_liq.append(h_l)
+            h_vap.append(h_v)
+            p_bubble.append(p_b)
+            p_dew.append(p_d)
+        except Exception:
+            continue
+
+    return np.array(h_liq), np.array(h_vap), np.array(p_bubble), np.array(p_dew)
+
 # --- Sidebar inputs --------------------------------------------------------
 with st.sidebar:
     st.markdown("### 🔄 Cycle Calculator")
@@ -80,7 +143,15 @@ with st.sidebar:
     st.divider()
     st.caption("Compressor & duty")
 
-    eta_isen = st.slider("Isentropic efficiency", min_value=0.40, max_value=1.00, value=0.75, step=0.05)
+    eta_isen = st.slider(
+        "Isentropic efficiency",
+        min_value=0.40, max_value=1.00, value=0.65, step=0.05,
+        help=(
+            "Typical ranges: reciprocating compressors 0.55-0.70, "
+            "scroll 0.65-0.80, screw 0.70-0.85, centrifugal 0.75-0.85. "
+            "Drops at off-design conditions."
+        ),
+    )
     duty_kw = st.number_input("Cooling duty (kW)", value=10.0, step=1.0, min_value=0.1, max_value=10000.0)
 
 # --- Header ----------------------------------------------------------------
@@ -114,15 +185,12 @@ except Exception:
 zeotropic = is_zeotropic(fluid)
 
 try:
-    # Saturation pressures
     t_evap_k = t_evap + 273.15
     t_cond_k = t_cond + 273.15
 
-    # For zeotropic blends, use dew point at evap (matches superheat convention)
-    # and bubble point at cond (matches subcooling convention)
     if zeotropic:
-        p_evap = PropsSI("P", "T", t_evap_k, "Q", 1, fluid)  # dew point
-        p_cond = PropsSI("P", "T", t_cond_k, "Q", 0, fluid)  # bubble point
+        p_evap = PropsSI("P", "T", t_evap_k, "Q", 1, fluid)
+        p_cond = PropsSI("P", "T", t_cond_k, "Q", 0, fluid)
         evap_glide = PropsSI("T", "P", p_evap, "Q", 1, fluid) - PropsSI("T", "P", p_evap, "Q", 0, fluid)
         cond_glide = PropsSI("T", "P", p_cond, "Q", 1, fluid) - PropsSI("T", "P", p_cond, "Q", 0, fluid)
     else:
@@ -131,7 +199,7 @@ try:
         evap_glide = 0
         cond_glide = 0
 
-    # Point 1 — compressor suction (saturated vapour at p_evap + superheat)
+    # Point 1: compressor suction
     if zeotropic:
         t1_k = PropsSI("T", "P", p_evap, "Q", 1, fluid) + superheat
     else:
@@ -140,14 +208,13 @@ try:
     s1 = PropsSI("S", "P", p_evap, "T", t1_k, fluid)
     rho1 = PropsSI("D", "P", p_evap, "T", t1_k, fluid)
 
-    # Point 2s — isentropic discharge at p_cond
+    # Point 2s isentropic, then point 2 actual
     h2s = PropsSI("H", "P", p_cond, "S", s1, fluid)
-    # Point 2 — actual discharge (apply isentropic efficiency)
     h2 = h1 + (h2s - h1) / eta_isen
     t2_k = PropsSI("T", "P", p_cond, "H", h2, fluid)
     s2 = PropsSI("S", "P", p_cond, "H", h2, fluid)
 
-    # Point 3 — condenser outlet (saturated liquid at p_cond minus subcooling)
+    # Point 3: condenser outlet
     if zeotropic:
         t3_k = PropsSI("T", "P", p_cond, "Q", 0, fluid) - subcooling
     else:
@@ -155,25 +222,23 @@ try:
     h3 = PropsSI("H", "P", p_cond, "T", t3_k, fluid)
     s3 = PropsSI("S", "P", p_cond, "T", t3_k, fluid)
 
-    # Point 4 — expansion valve outlet (isenthalpic, h4 = h3)
+    # Point 4: throttle outlet (h4 = h3)
     h4 = h3
     t4_k = PropsSI("T", "P", p_evap, "H", h4, fluid)
     s4 = PropsSI("S", "P", p_evap, "H", h4, fluid)
     x4 = PropsSI("Q", "P", p_evap, "H", h4, fluid)
 
     # Performance metrics
-    q_evap = (h1 - h4) / 1000  # refrigeration effect, kJ/kg
-    w_comp = (h2 - h1) / 1000  # compression work, kJ/kg
-    q_cond = (h2 - h3) / 1000  # heat rejection, kJ/kg
+    q_evap = (h1 - h4) / 1000
+    w_comp = (h2 - h1) / 1000
+    q_cond = (h2 - h3) / 1000
     cop_cooling = q_evap / w_comp
     cop_heating = q_cond / w_comp
     pressure_ratio = p_cond / p_evap
+    mass_flow = duty_kw / q_evap
+    vol_flow_suction = mass_flow / rho1
 
-    # Mass flow at specified duty
-    mass_flow = duty_kw / q_evap  # kg/s
-    vol_flow_suction = mass_flow / rho1  # m³/s
-
-    # --- Display: Performance metrics --------------------------------------
+    # --- Performance metrics display ---------------------------------------
     st.subheader("Performance")
 
     m1, m2, m3, m4 = st.columns(4)
@@ -196,85 +261,194 @@ try:
 
     st.divider()
 
-    # --- Schematic (SVG) ---------------------------------------------------
-    st.subheader("Cycle schematic")
+    # --- Schematic + P-h diagram side by side ------------------------------
+    st.subheader("Cycle visualisation")
 
     p_evap_disp = f"{kpa_to_unit(p_evap/1000, pressure_unit):.2f} {pressure_unit}"
     p_cond_disp = f"{kpa_to_unit(p_cond/1000, pressure_unit):.2f} {pressure_unit}"
     t_disch = t2_k - 273.15
 
     schematic_svg = f"""
-    <div style="display: flex; justify-content: center; margin: 20px 0;">
+    <div style="display: flex; justify-content: center; margin: 0;">
     <svg viewBox="0 0 720 480" xmlns="http://www.w3.org/2000/svg" style="max-width: 720px; width: 100%; height: auto;">
-      <!-- Condenser (top) -->
       <rect x="180" y="60" width="360" height="80" fill="#FEE2E2" stroke="#DC2626" stroke-width="2" rx="6"/>
       <text x="360" y="95" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="600" fill="#7F1D1D">Condenser</text>
       <text x="360" y="120" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#991B1B">{t_cond:.1f} °C · {p_cond_disp}</text>
 
-      <!-- Evaporator (bottom) -->
       <rect x="180" y="340" width="360" height="80" fill="#DBEAFE" stroke="#2563EB" stroke-width="2" rx="6"/>
       <text x="360" y="375" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="600" fill="#1E3A8A">Evaporator</text>
       <text x="360" y="400" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#1E40AF">{t_evap:.1f} °C · {p_evap_disp}</text>
 
-      <!-- Compressor (right) -->
       <rect x="560" y="200" width="120" height="80" fill="#FEF3C7" stroke="#D97706" stroke-width="2" rx="6"/>
       <text x="620" y="235" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="600" fill="#78350F">Compressor</text>
       <text x="620" y="258" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#92400E">η = {eta_isen:.2f}</text>
 
-      <!-- Expansion valve (left) -->
       <rect x="40" y="200" width="120" height="80" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2" rx="6"/>
       <text x="100" y="235" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#312E81">Expansion</text>
       <text x="100" y="255" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#312E81">valve</text>
 
-      <!-- Pipes connecting components -->
-      <!-- Compressor outlet (2) → Condenser inlet -->
       <line x1="620" y1="200" x2="620" y2="100" stroke="#374151" stroke-width="2.5"/>
       <line x1="620" y1="100" x2="540" y2="100" stroke="#374151" stroke-width="2.5"/>
       <polygon points="540,100 550,95 550,105" fill="#374151"/>
 
-      <!-- Condenser outlet → Expansion valve inlet (3) -->
       <line x1="180" y1="100" x2="100" y2="100" stroke="#374151" stroke-width="2.5"/>
       <line x1="100" y1="100" x2="100" y2="200" stroke="#374151" stroke-width="2.5"/>
       <polygon points="100,200 95,190 105,190" fill="#374151"/>
 
-      <!-- Expansion valve outlet (4) → Evaporator inlet -->
       <line x1="100" y1="280" x2="100" y2="380" stroke="#374151" stroke-width="2.5"/>
       <line x1="100" y1="380" x2="180" y2="380" stroke="#374151" stroke-width="2.5"/>
       <polygon points="180,380 170,375 170,385" fill="#374151"/>
 
-      <!-- Evaporator outlet → Compressor inlet (1) -->
       <line x1="540" y1="380" x2="620" y2="380" stroke="#374151" stroke-width="2.5"/>
       <line x1="620" y1="380" x2="620" y2="280" stroke="#374151" stroke-width="2.5"/>
       <polygon points="620,280 615,290 625,290" fill="#374151"/>
 
-      <!-- State point markers -->
-      <!-- Point 1: compressor inlet (top-right of evaporator → compressor) -->
       <circle cx="555" cy="380" r="14" fill="#FFFFFF" stroke="#0F172A" stroke-width="2"/>
       <text x="555" y="385" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#0F172A">1</text>
       <text x="555" y="350" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#374151">{t1_k - 273.15:.1f} °C</text>
 
-      <!-- Point 2: compressor outlet (top side) -->
       <circle cx="555" cy="100" r="14" fill="#FFFFFF" stroke="#0F172A" stroke-width="2"/>
       <text x="555" y="105" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#0F172A">2</text>
       <text x="555" y="155" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#374151">{t_disch:.1f} °C</text>
 
-      <!-- Point 3: condenser outlet -->
       <circle cx="165" cy="100" r="14" fill="#FFFFFF" stroke="#0F172A" stroke-width="2"/>
       <text x="165" y="105" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#0F172A">3</text>
       <text x="165" y="155" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#374151">{t3_k - 273.15:.1f} °C</text>
 
-      <!-- Point 4: expansion valve outlet -->
       <circle cx="165" cy="380" r="14" fill="#FFFFFF" stroke="#0F172A" stroke-width="2"/>
       <text x="165" y="385" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#0F172A">4</text>
       <text x="165" y="350" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#374151">{t4_k - 273.15:.1f} °C · x={x4:.2f}</text>
 
-      <!-- Title -->
-      <text x="360" y="35" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="600" fill="#0F172A">{display_name} · {duty_kw:.1f} kW cooling · COP = {cop_cooling:.2f}</text>
+      <text x="360" y="35" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="600" fill="#0F172A">{display_name} · {duty_kw:.1f} kW · COP = {cop_cooling:.2f}</text>
     </svg>
     </div>
     """
 
-    st.markdown(schematic_svg, unsafe_allow_html=True)
+    # --- Build P-h diagram -------------------------------------------------
+    fig = go.Figure()
+
+    if zeotropic:
+        h_liq_arr, h_vap_arr, p_bubble_arr, p_dew_arr = compute_zeotropic_dome(fluid)
+        # Saturated liquid curve (Q=0, bubble line)
+        fig.add_trace(go.Scatter(
+            x=h_liq_arr, y=p_bubble_arr,
+            mode="lines", name="Sat. liquid (bubble)",
+            line=dict(color="#2563EB", width=2),
+            hovertemplate="h = %{x:.1f} kJ/kg<br>P = %{y:.1f} kPa<extra></extra>",
+        ))
+        # Saturated vapour curve (Q=1, dew line)
+        fig.add_trace(go.Scatter(
+            x=h_vap_arr, y=p_dew_arr,
+            mode="lines", name="Sat. vapour (dew)",
+            line=dict(color="#DC2626", width=2),
+            hovertemplate="h = %{x:.1f} kJ/kg<br>P = %{y:.1f} kPa<extra></extra>",
+        ))
+    else:
+        h_liq_arr, h_vap_arr, p_sat_arr = compute_saturation_dome(fluid)
+        fig.add_trace(go.Scatter(
+            x=h_liq_arr, y=p_sat_arr,
+            mode="lines", name="Saturated liquid",
+            line=dict(color="#2563EB", width=2),
+            hovertemplate="h = %{x:.1f} kJ/kg<br>P = %{y:.1f} kPa<extra></extra>",
+        ))
+        fig.add_trace(go.Scatter(
+            x=h_vap_arr, y=p_sat_arr,
+            mode="lines", name="Saturated vapour",
+            line=dict(color="#DC2626", width=2),
+            hovertemplate="h = %{x:.1f} kJ/kg<br>P = %{y:.1f} kPa<extra></extra>",
+        ))
+
+# Critical point — average of saturated liquid and vapour enthalpy near critical
+    p_crit_kpa = PropsSI("Pcrit", fluid) / 1000
+    try:
+        t_near_crit = t_crit_k * 0.999
+        h_l_crit = PropsSI("H", "T", t_near_crit, "Q", 0, fluid) / 1000
+        h_v_crit = PropsSI("H", "T", t_near_crit, "Q", 1, fluid) / 1000
+        h_crit = (h_l_crit + h_v_crit) / 2
+        fig.add_trace(go.Scatter(
+            x=[h_crit], y=[p_crit_kpa],
+            mode="markers", name="Critical point",
+            marker=dict(color="#000000", size=8, symbol="x"),
+            hovertemplate=f"Critical point<br>h = {h_crit:.1f} kJ/kg<br>P = {p_crit_kpa:.1f} kPa<extra></extra>",
+        ))
+    except Exception:
+        pass
+
+    # Cycle overlay
+    # Process 1→2: compression (interpolate between p_evap and p_cond at constant s_actual)
+    n_int = 30
+    p_compression = np.linspace(p_evap, p_cond, n_int)
+    h_compression = []
+    for p in p_compression:
+        # Linear interpolation in h between h1 and h2 along pressure
+        # (true compression path is curved; this approximates well for visualisation)
+        frac = (p - p_evap) / (p_cond - p_evap)
+        h_compression.append(h1 + frac * (h2 - h1))
+    h_compression = np.array(h_compression) / 1000
+
+    # Process 2→3: condensation (constant pressure at p_cond)
+    h_condensation = np.linspace(h2, h3, n_int) / 1000
+    p_condensation = np.full(n_int, p_cond / 1000)
+
+    # Process 3→4: throttling (constant enthalpy, drop pressure)
+    h_throttling = np.full(n_int, h3 / 1000)
+    p_throttling = np.linspace(p_cond, p_evap, n_int) / 1000
+
+    # Process 4→1: evaporation (constant pressure at p_evap)
+    h_evaporation = np.linspace(h4, h1, n_int) / 1000
+    p_evaporation = np.full(n_int, p_evap / 1000)
+
+    cycle_h = np.concatenate([h_compression, h_condensation, h_throttling, h_evaporation])
+    cycle_p = np.concatenate([
+        p_compression / 1000, p_condensation, p_throttling, p_evaporation
+    ])
+
+    fig.add_trace(go.Scatter(
+        x=cycle_h, y=cycle_p,
+        mode="lines", name="Cycle",
+        line=dict(color="#059669", width=3),
+        hovertemplate="h = %{x:.1f} kJ/kg<br>P = %{y:.1f} kPa<extra></extra>",
+    ))
+
+    # State point markers
+    state_h = [h1/1000, h2/1000, h3/1000, h4/1000]
+    state_p = [p_evap/1000, p_cond/1000, p_cond/1000, p_evap/1000]
+    state_labels = ["1", "2", "3", "4"]
+
+    fig.add_trace(go.Scatter(
+        x=state_h, y=state_p,
+        mode="markers+text", name="State points",
+        marker=dict(color="#0F172A", size=14, line=dict(color="white", width=2)),
+        text=state_labels,
+        textposition="top center",
+        textfont=dict(color="#0F172A", size=14, family="sans-serif"),
+        showlegend=False,
+        hovertemplate="Point %{text}<br>h = %{x:.1f} kJ/kg<br>P = %{y:.1f} kPa<extra></extra>",
+    ))
+
+    fig.update_layout(
+        xaxis_title="Specific enthalpy h (kJ/kg)",
+        yaxis_title=f"Pressure P (kPa)",
+        yaxis_type="log",
+        height=500,
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255,255,255,0.8)"),
+        hovermode="closest",
+        plot_bgcolor="#FAFAFA",
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="#E5E7EB")
+    fig.update_yaxes(showgrid=True, gridcolor="#E5E7EB")
+
+    # Layout: schematic on left, P-h on right
+    col_left, col_right = st.columns([1, 1])
+
+    with col_left:
+        st.markdown("**System schematic**")
+        st.markdown(schematic_svg, unsafe_allow_html=True)
+
+    with col_right:
+        st.markdown("**P-h diagram**")
+        st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
 
@@ -307,40 +481,39 @@ try:
 
     st.divider()
 
-    # --- Warnings and notes ------------------------------------------------
+    # --- Warnings ---------------------------------------------------------
     warnings = []
 
     if t_disch > 130:
         warnings.append(
             f"⚠️ **High discharge temperature ({t_disch:.0f} °C).** Risk of "
-            f"compressor oil breakdown and valve damage above ~120-130 °C. "
-            f"Consider lower compression ratio, vapour injection, or a different refrigerant."
+            f"compressor oil breakdown above ~120-130 °C. Consider lower "
+            f"compression ratio, vapour injection, or different refrigerant."
         )
 
     if pressure_ratio > 8:
         warnings.append(
             f"⚠️ **High pressure ratio ({pressure_ratio:.1f}).** Single-stage "
-            f"compression typically targets <8. Consider two-stage or cascade systems."
+            f"compression typically targets <8. Consider two-stage or cascade."
         )
 
     if pressure_ratio < 1.5:
         warnings.append(
-            f"ℹ️ **Low pressure ratio ({pressure_ratio:.1f}).** Cycle may not "
-            f"need significant compression — verify the operating conditions are realistic."
+            f"ℹ️ **Low pressure ratio ({pressure_ratio:.1f}).** Verify operating "
+            f"conditions are realistic."
         )
 
     if zeotropic and (evap_glide > 1 or cond_glide > 1):
         warnings.append(
-            f"ℹ️ **{display_name} is a zeotropic blend.** Evaporator glide: "
-            f"{evap_glide:.1f} K. Condenser glide: {cond_glide:.1f} K. "
-            f"Reference temperatures use the dew point at evap pressure and "
-            f"the bubble point at cond pressure (industry convention)."
+            f"ℹ️ **{display_name} is a zeotropic blend.** Evap glide: "
+            f"{evap_glide:.1f} K, cond glide: {cond_glide:.1f} K. Reference "
+            f"temps use dew point at evap pressure, bubble point at cond pressure."
         )
 
     if cop_cooling < 1.5:
         warnings.append(
             f"ℹ️ **Low cooling COP ({cop_cooling:.2f}).** Cycle is operating "
-            f"under demanding conditions. Verify evap/cond temperatures match design intent."
+            f"under demanding conditions."
         )
 
     if warnings:
@@ -376,14 +549,13 @@ with st.expander("About this calculation"):
 **For zeotropic blends:**
 - Evaporator pressure derived from dew point at the specified evap temperature
 - Condenser pressure derived from bubble point at the specified cond temperature
-- This matches the industry convention used in superheat (dew) and subcooling (bubble) measurements
+- This matches industry convention
 
-**Real-world deviations:**
-- Pressure drops typically reduce capacity by 2-5%
-- Heat loss in the compressor reduces actual discharge temperature vs. ideal
-- Volumetric efficiency of real compressors typically 60-90% — not modelled here
-- This calculator gives ideal-cycle performance; manufacturer compressor maps give actual performance
+**P-h diagram notes:**
+- Pressure axis is logarithmic (standard convention)
+- Compression line 1→2 is approximated as linear in h vs P; the true path is slightly curved but close for visualisation
+- Throttling 3→4 is a vertical line at constant enthalpy
 """
     )
 
-st.caption("refrigtools.app · v0.6")
+st.caption("refrigtools.app · v0.7")
