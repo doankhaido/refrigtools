@@ -3,11 +3,22 @@ from CoolProp.CoolProp import PropsSI
 
 # --- Page config -----------------------------------------------------------
 st.set_page_config(
-    page_title="Refrigtools",
-    page_icon="❄️",
+    page_title="Refrigerant Properties · Refrigtools",
+    page_icon="🧪",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Hide Streamlit branding
+hide_streamlit_style = """
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+[data-testid="stToolbar"] {visibility: hidden !important;}
+.stDeployButton {display: none;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # --- Refrigerant data ------------------------------------------------------
 REFRIGERANTS = {
@@ -60,10 +71,13 @@ def safety_color(s):
     if s.startswith("B"): return "⚫"
     return "⚪"
 
+def is_zeotropic(fluid_string):
+    return fluid_string.startswith("HEOS::")
+
 # --- Sidebar ---------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### ❄️ Refrigtools")
-    st.caption("Refrigerant property calculator with compliance overlay")
+    st.markdown("### 🧪 Refrigerant Properties")
+    st.caption("Property calculator with compliance overlay")
     st.divider()
 
     display_name = st.selectbox("Refrigerant", sorted_names)
@@ -72,14 +86,10 @@ with st.sidebar:
 
     pressure_unit = st.selectbox("Pressure units", list(PRESSURE_UNITS.keys()), index=1)
 
-    mode = st.radio(
-        "Calculation mode",
-        ["Saturation (quick)", "Two-property lookup","Superheat / Subcooling"],
-    )
+    mode = st.radio("Calculation mode", ["Saturation (quick)", "Two-property lookup"])
 
     st.divider()
 
-    # --- Saturation mode ---
     if mode == "Saturation (quick)":
         sat_input = st.radio("Specify by", ["Temperature", "Pressure"], horizontal=True)
         if sat_input == "Temperature":
@@ -93,29 +103,6 @@ with st.sidebar:
                 step=1.0 if pressure_unit == "bar" else 100.0,
                 min_value=0.1,
             )
-
-    # --- Superheat / Subcooling mode ---
-    elif mode == "Superheat / Subcooling":
-        sh_sc_type = st.radio(
-            "Calculation",
-            ["Superheat (suction line)", "Subcooling (liquid line)"],
-        )
-        sh_pressure = st.number_input(
-            f"Measured pressure ({pressure_unit})",
-            value=kpa_to_unit(800.0 if "Superheat" in sh_sc_type else 1500.0, pressure_unit),
-            step=1.0 if pressure_unit == "bar" else 10.0,
-            min_value=0.1,
-            help="Gauge pressure converted to absolute, or absolute pressure from a transducer.",
-        )
-        sh_temp = st.number_input(
-            "Measured temperature (°C)",
-            value=10.0 if "Superheat" in sh_sc_type else 35.0,
-            step=0.1,
-            min_value=-100.0, max_value=200.0,
-            help="Pipe surface temperature from clamp probe or sensor.",
-        )
-
-    # --- Two-property lookup ---
     else:
         pair_label = st.selectbox("Input properties", list(INPUT_PAIRS.keys()))
         prop1, prop2 = INPUT_PAIRS[pair_label]
@@ -132,7 +119,7 @@ with st.sidebar:
         val1 = st.number_input(labels[prop1], value=float(defaults[prop1]), step=1.0 if prop1 in ("T", "P", "H") else 0.05)
         val2 = st.number_input(labels[prop2], value=float(defaults[prop2]), step=1.0 if prop2 in ("T", "P", "H") else 0.05)
 
-# --- Main panel: header ----------------------------------------------------
+# --- Main panel: header ---------------------------------------------------
 st.title(display_name)
 st.caption(data["notes"])
 
@@ -165,7 +152,6 @@ except Exception:
 
 st.divider()
 
-# --- Calc helpers ----------------------------------------------------------
 def to_si(prop, val, p_unit):
     if prop == "T": return val + 273.15
     if prop == "P": return unit_to_kpa(val, p_unit) * 1000
@@ -173,10 +159,7 @@ def to_si(prop, val, p_unit):
     if prop == "S": return val * 1000
     return val
 
-def is_zeotropic(fluid_string):
-    return fluid_string.startswith("HEOS::")
-
-# --- Mode dispatch ---------------------------------------------------------
+# --- Calculation ----------------------------------------------------------
 if mode == "Saturation (quick)":
     try:
         if sat_temp_c is not None:
@@ -212,8 +195,7 @@ if mode == "Saturation (quick)":
                 st.subheader(f"Saturation at {sat_pressure:.3f} {pressure_unit}")
                 m1, m2, m3 = st.columns(3)
                 if is_zeotropic(fluid):
-                    m1.metric("Bubble point T", f"{t_l - 273.15:.2f} °C",
-                              help=f"Glide: {t_v - t_l:.2f} K (dew {t_v - 273.15:.2f} °C)")
+                    m1.metric("Bubble point T", f"{t_l - 273.15:.2f} °C", help=f"Glide: {t_v - t_l:.2f} K")
                 else:
                     m1.metric("Saturation T", f"{t_l - 273.15:.2f} °C")
                 m2.metric("Latent heat", f"{h_v - h_l:.1f} kJ/kg")
@@ -222,126 +204,6 @@ if mode == "Saturation (quick)":
                 m4.metric("Vapour density", f"{d_v:.2f} kg/m³")
                 m5.metric("Liquid enthalpy", f"{h_l:.1f} kJ/kg")
                 m6.metric("Vapour enthalpy", f"{h_v:.1f} kJ/kg")
-    except Exception as e:
-        st.error(f"Calculation failed.\n\n_{e}_")
-
-elif mode == "Superheat / Subcooling":
-    try:
-        p_pa = unit_to_kpa(sh_pressure, pressure_unit) * 1000
-        t_meas_k = sh_temp + 273.15
-
-        if crit_available and p_pa >= p_crit_pa:
-            st.warning("Pressure at or above critical — superheat/subcooling are undefined in supercritical region.")
-        else:
-            # Bubble point (Q=0) and dew point (Q=1) at this pressure
-            t_bubble_k = PropsSI("T", "P", p_pa, "Q", 0, fluid)
-            t_dew_k = PropsSI("T", "P", p_pa, "Q", 1, fluid)
-            t_bubble_c = t_bubble_k - 273.15
-            t_dew_c = t_dew_k - 273.15
-            glide = t_dew_k - t_bubble_k
-
-            if "Superheat" in sh_sc_type:
-                # Superheat measured from dew point
-                superheat = sh_temp - t_dew_c
-                st.subheader(f"Superheat at {sh_pressure:.3f} {pressure_unit}, {sh_temp:.1f} °C")
-
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Saturation T (dew point)", f"{t_dew_c:.2f} °C")
-                m2.metric("Measured T", f"{sh_temp:.2f} °C")
-                m3.metric(
-                    "Superheat",
-                    f"{superheat:.2f} K",
-                    delta=None if abs(superheat) < 0.01 else (
-                        "wet — risk of liquid floodback" if superheat < 0
-                        else None
-                    ),
-                    delta_color="inverse" if superheat < 0 else "normal",
-                )
-
-                # Health indicator
-                if superheat < 0:
-                    st.error(
-                        f"⚠️ **Negative superheat ({superheat:.1f} K).** Suction is wet — "
-                        f"refrigerant is below dew point at this pressure. Risk of liquid "
-                        f"floodback to compressor. Check TXV setting, charge, and load conditions."
-                    )
-                elif superheat <= 5:
-                    st.warning(
-                        f"Low superheat ({superheat:.1f} K). Acceptable for some flooded "
-                        f"systems but typical DX systems target 5–10 K. Verify TXV operation."
-                    )
-                elif superheat <= 12:
-                    st.success(
-                        f"Superheat in typical range (5–12 K) for DX systems. Within normal "
-                        f"operating envelope."
-                    )
-                elif superheat <= 25:
-                    st.warning(
-                        f"High superheat ({superheat:.1f} K). May indicate undercharge, "
-                        f"restricted metering device, or low evaporator load."
-                    )
-                else:
-                    st.error(
-                        f"Very high superheat ({superheat:.1f} K). Strong indicator of "
-                        f"undercharge or significant restriction. Investigate before "
-                        f"continuing operation."
-                    )
-
-                if is_zeotropic(fluid) and glide > 0.5:
-                    st.info(
-                        f"ℹ️ **{display_name}** is a zeotropic blend with {glide:.1f} K glide. "
-                        f"Superheat is calculated from the dew point ({t_dew_c:.2f} °C), "
-                        f"per industry convention. Bubble point at this pressure: {t_bubble_c:.2f} °C."
-                    )
-
-            else:
-                # Subcooling measured from bubble point
-                subcooling = t_bubble_c - sh_temp
-                st.subheader(f"Subcooling at {sh_pressure:.3f} {pressure_unit}, {sh_temp:.1f} °C")
-
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Saturation T (bubble point)", f"{t_bubble_c:.2f} °C")
-                m2.metric("Measured T", f"{sh_temp:.2f} °C")
-                m3.metric(
-                    "Subcooling",
-                    f"{subcooling:.2f} K",
-                    delta_color="inverse" if subcooling < 0 else "normal",
-                )
-
-                if subcooling < 0:
-                    st.error(
-                        f"⚠️ **Negative subcooling ({subcooling:.1f} K).** Liquid line is "
-                        f"above bubble point — flash gas in liquid line. Causes TXV hunting "
-                        f"and reduced capacity. Check charge, condenser performance, and "
-                        f"liquid line restrictions."
-                    )
-                elif subcooling < 3:
-                    st.warning(
-                        f"Low subcooling ({subcooling:.1f} K). May indicate undercharge or "
-                        f"condenser issues. Most systems target 5–15 K."
-                    )
-                elif subcooling <= 15:
-                    st.success(
-                        f"Subcooling in typical range (3–15 K). Within normal operating envelope."
-                    )
-                elif subcooling <= 25:
-                    st.warning(
-                        f"High subcooling ({subcooling:.1f} K). May indicate overcharge, "
-                        f"restricted condenser, or non-condensables in the system."
-                    )
-                else:
-                    st.error(
-                        f"Very high subcooling ({subcooling:.1f} K). Strong indicator of "
-                        f"overcharge or condenser fault. Investigate before continuing."
-                    )
-
-                if is_zeotropic(fluid) and glide > 0.5:
-                    st.info(
-                        f"ℹ️ **{display_name}** is a zeotropic blend with {glide:.1f} K glide. "
-                        f"Subcooling is calculated from the bubble point ({t_bubble_c:.2f} °C), "
-                        f"per industry convention. Dew point at this pressure: {t_dew_c:.2f} °C."
-                    )
-
     except Exception as e:
         st.error(f"Calculation failed.\n\n_{e}_")
 
@@ -387,9 +249,16 @@ else:  # Two-property lookup
         if state.get("C") is not None:
             m6.metric("Specific heat (cp)", f"{state['C']/1000:.3f} kJ/kg·K")
     except Exception as e:
-        st.error(f"Calculation failed — inputs may be inconsistent or out of range.\n\n_{e}_")
+        err_str = str(e)
+        if "not yet supported" in err_str or "INPUTS" in err_str:
+            st.error(
+                "This combination of inputs isn't supported for this refrigerant. "
+                "Try a different input pair — Pressure + Enthalpy or Pressure + "
+                "Entropy are the most reliable for off-saturation states."
+            )
+        else:
+            st.error(f"Calculation failed — inputs may be inconsistent or out of range.\n\n_{e}_")
 
-# --- Footer ---------------------------------------------------------------
 st.divider()
 
 with st.expander("About the compliance data"):
@@ -404,4 +273,4 @@ Always verify against current standards before specifying refrigerants for insta
 """
     )
 
-st.caption("Powered by CoolProp · refrigtools.app · v0.3 dev")
+st.caption("refrigtools.app · v0.4")
