@@ -1,0 +1,16 @@
+{
+  "name": "Refrigerant Handling AU/NZ",
+  "short_name": "Refrigerant",
+  "description": "Field tool for AU/NZ refrigerant handling code of practice — refrigerant data, calculators, procedures, reference.",
+  "start_url": "/code-of-practice/",
+  "scope": "/code-of-practice/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1a1a1a",
+  "background_color": "#ebe9e1",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["productivity", "utilities"]
+}
