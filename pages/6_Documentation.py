@@ -1,4 +1,5 @@
 import streamlit as st
+from sidebar import render_handbook_link
 
 # --- Page config -----------------------------------------------------------
 st.set_page_config(
@@ -7,6 +8,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+render_handbook_link()
 
 hide_streamlit_style = """
 <style>

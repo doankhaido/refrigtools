@@ -1,4 +1,5 @@
 import streamlit as st
+from sidebar import render_handbook_link
 import pandas as pd
 import math
 
@@ -9,6 +10,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+render_handbook_link()
 
 hide_streamlit_style = """
 <style>

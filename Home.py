@@ -1,4 +1,5 @@
 import streamlit as st
+from sidebar import render_handbook_link
 
 st.set_page_config(
     page_title="Refrigtools",
@@ -6,6 +7,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+render_handbook_link()
 
 # Hide Streamlit branding
 hide_streamlit_style = """

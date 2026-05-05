@@ -1,4 +1,5 @@
 import streamlit as st
+from sidebar import render_handbook_link
 from CoolProp.CoolProp import PropsSI
 
 # --- Page config -----------------------------------------------------------
@@ -8,6 +9,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+render_handbook_link()
 
 # Hide Streamlit branding
 hide_streamlit_style = """

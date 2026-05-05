@@ -1,4 +1,5 @@
 import streamlit as st
+from sidebar import render_handbook_link
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -11,6 +12,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+render_handbook_link()
 
 hide_streamlit_style = """
 <style>
