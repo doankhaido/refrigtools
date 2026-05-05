@@ -236,7 +236,6 @@ function setJurisdiction(j) {
 }
 document.getElementById('j-au').onclick = () => setJurisdiction('AU');
 document.getElementById('j-nz').onclick = () => setJurisdiction('NZ');
-setJurisdiction(jurisdiction);
 
 document.querySelectorAll('.tab-btn').forEach(b => {
   b.onclick = () => {
@@ -591,6 +590,7 @@ function renderInfo() {
 }
 document.getElementById('info-select').onchange = renderInfo;
 
+setJurisdiction(jurisdiction);
 renderRefDetail();
 renderCalc();
 renderTool();
