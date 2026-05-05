@@ -57,6 +57,17 @@
   html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; background: var(--bg-tertiary); color: var(--text-primary); font-size: 16px; line-height: 1.5; }
   body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); min-height: 100vh; }
   .app { max-width: 480px; margin: 0 auto; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .home-link {
+    display: inline-block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    margin-bottom: 8px;
+    padding: 4px 0;
+  }
+  .home-link:hover {
+    color: var(--text-primary);
+  }
   h1 { font-size: 18px; font-weight: 500; margin: 8px 0 12px; padding: 0 4px; }
   h1 .ver { font-size: 11px; color: var(--text-tertiary); font-weight: 400; }
   .juris-bar { display: flex; gap: 6px; margin-bottom: 12px; padding: 4px; background: var(--bg-secondary); border-radius: var(--radius-md); }
@@ -109,6 +120,7 @@
 </head>
 <body>
 <div class="app">
+  <a href="https://refrigtools.app/" class="home-link">← refrigtools.app</a>
   <h1>Refrigerant handling — AU/NZ <span class="ver">v2 · offline</span></h1>
 
   <div id="install-banner" class="install-banner">
@@ -195,6 +207,10 @@
     localStorage.setItem('install-banner-dismissed', '1');
     document.getElementById('install-banner').style.display = 'none';
   };
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    const link = document.querySelector('.home-link');
+    if (link) link.style.display = 'none';
+  }
 </script>
 </body>
 </html>
