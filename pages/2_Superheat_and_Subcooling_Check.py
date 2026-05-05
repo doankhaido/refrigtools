@@ -6,12 +6,11 @@ from CoolProp.CoolProp import PropsSI
 st.set_page_config(
     page_title="Superheat / Subcooling · Refrigtools",
     page_icon="🔧",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 render_handbook_link()
 
-# Hide Streamlit branding
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -23,31 +22,20 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # --- Refrigerant data ------------------------------------------------------
 REFRIGERANTS = {
-    "R22": "R22",
-    "R23": "R23",
-    "R32": "R32",
-    "R134a": "R134a",
-    "R290": "R290",
-    "R404A": "R404A",
-    "R407C": "R407C",
-    "R410A": "R410A",
+    "R22": "R22", "R23": "R23", "R32": "R32", "R134a": "R134a", "R290": "R290",
+    "R404A": "R404A", "R407C": "R407C", "R410A": "R410A",
     "R454B": "HEOS::R32[0.689]&R1234yf[0.311]",
     "R454C": "HEOS::R32[0.215]&R1234yf[0.785]",
     "R507A": "R507A",
     "R513A": "HEOS::R1234yf[0.56]&R134a[0.44]",
-    "R717": "R717",
-    "R744": "R744",
-    "R1234yf": "R1234yf",
-    "R1234ze(E)": "R1234ze(E)",
+    "R717": "R717", "R744": "R744", "R1234yf": "R1234yf", "R1234ze(E)": "R1234ze(E)",
 }
 
 def sort_key(name):
     digits = ""
     for ch in name[1:]:
-        if ch.isdigit():
-            digits += ch
-        else:
-            break
+        if ch.isdigit(): digits += ch
+        else: break
     return (int(digits) if digits else 0, name)
 
 sorted_names = sorted(REFRIGERANTS.keys(), key=sort_key)
@@ -59,46 +47,45 @@ def unit_to_kpa(value, unit): return value * PRESSURE_UNITS[unit] / PRESSURE_UNI
 def is_zeotropic(fluid_string):
     return fluid_string.startswith("HEOS::")
 
-# --- Sidebar ---------------------------------------------------------------
+# --- Sidebar (units only) --------------------------------------------------
 with st.sidebar:
-    st.markdown("### 🔧 Superheat / Subcooling")
-    st.caption("Field calculator for service techs")
-    st.divider()
-
-    display_name = st.selectbox("Refrigerant", sorted_names)
-    fluid = REFRIGERANTS[display_name]
-
+    st.markdown("### Settings")
     pressure_unit = st.selectbox("Pressure units", list(PRESSURE_UNITS.keys()), index=1)
 
+# --- Main panel ------------------------------------------------------------
+st.title("Superheat / Subcooling")
+st.caption("Field calculator for service techs")
+
+# Primary inputs in main body
+ic1, ic2 = st.columns([1, 1])
+with ic1:
+    display_name = st.selectbox("Refrigerant", sorted_names)
+fluid = REFRIGERANTS[display_name]
+with ic2:
     sh_sc_type = st.radio(
         "Calculation",
-        ["Superheat (suction line)", "Subcooling (liquid line)"],
+        ["Superheat", "Subcooling"],
+        horizontal=True,
+        help="Superheat: suction line. Subcooling: liquid line."
     )
 
+vc1, vc2 = st.columns(2)
+with vc1:
     sh_pressure = st.number_input(
-        f"Measured pressure ({pressure_unit})",
-        value=kpa_to_unit(800.0 if "Superheat" in sh_sc_type else 1500.0, pressure_unit),
+        f"Pressure ({pressure_unit})",
+        value=kpa_to_unit(800.0 if sh_sc_type == "Superheat" else 1500.0, pressure_unit),
         step=1.0 if pressure_unit == "bar" else 10.0,
         min_value=0.1,
         help="Absolute pressure. If reading from a service gauge (gauge pressure), add ~1 bar / 14.5 psi / 100 kPa.",
     )
-
+with vc2:
     sh_temp = st.number_input(
-        "Measured temperature (°C)",
-        value=10.0 if "Superheat" in sh_sc_type else 35.0,
+        "Pipe temp (°C)",
+        value=10.0 if sh_sc_type == "Superheat" else 35.0,
         step=0.1,
         min_value=-100.0, max_value=200.0,
         help="Pipe surface temperature from clamp probe or sensor.",
     )
-
-# --- Main panel: header ----------------------------------------------------
-st.title(f"🔧 Superheat / Subcooling — {display_name}")
-
-st.markdown(
-    "Enter the measured pressure and pipe surface temperature. "
-    "The tool computes saturation temperature at that pressure and shows "
-    "superheat (suction) or subcooling (liquid line), with health diagnostics."
-)
 
 st.divider()
 
@@ -113,21 +100,20 @@ try:
             "undefined in supercritical region."
         )
     else:
-        # Bubble point (Q=0) and dew point (Q=1) at this pressure
         t_bubble_k = PropsSI("T", "P", p_pa, "Q", 0, fluid)
         t_dew_k = PropsSI("T", "P", p_pa, "Q", 1, fluid)
         t_bubble_c = t_bubble_k - 273.15
         t_dew_c = t_dew_k - 273.15
         glide = t_dew_k - t_bubble_k
 
-        if "Superheat" in sh_sc_type:
+        if sh_sc_type == "Superheat":
             superheat = sh_temp - t_dew_c
             st.subheader(f"Superheat at {sh_pressure:.3f} {pressure_unit}, {sh_temp:.1f} °C")
 
-            m1, m2, m3 = st.columns(3)
+            m1, m2 = st.columns(2)
             m1.metric("Saturation T (dew point)", f"{t_dew_c:.2f} °C")
             m2.metric("Measured T", f"{sh_temp:.2f} °C")
-            m3.metric(
+            st.metric(
                 "Superheat",
                 f"{superheat:.2f} K",
                 delta_color="inverse" if superheat < 0 else "normal",
@@ -172,10 +158,10 @@ try:
             subcooling = t_bubble_c - sh_temp
             st.subheader(f"Subcooling at {sh_pressure:.3f} {pressure_unit}, {sh_temp:.1f} °C")
 
-            m1, m2, m3 = st.columns(3)
+            m1, m2 = st.columns(2)
             m1.metric("Saturation T (bubble point)", f"{t_bubble_c:.2f} °C")
             m2.metric("Measured T", f"{sh_temp:.2f} °C")
-            m3.metric(
+            st.metric(
                 "Subcooling",
                 f"{subcooling:.2f} K",
                 delta_color="inverse" if subcooling < 0 else "normal",
@@ -243,4 +229,4 @@ the system's design specifications when available.
 """
     )
 
-st.caption("refrigtools.app · v0.4")
+st.caption("refrigtools.app · v0.5")

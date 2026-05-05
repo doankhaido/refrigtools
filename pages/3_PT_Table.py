@@ -7,12 +7,11 @@ from CoolProp.CoolProp import PropsSI
 st.set_page_config(
     page_title="P-T Table · Refrigtools",
     page_icon="📋",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 render_handbook_link()
 
-# Hide Streamlit branding
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -24,31 +23,20 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # --- Refrigerant data ------------------------------------------------------
 REFRIGERANTS = {
-    "R22": "R22",
-    "R23": "R23",
-    "R32": "R32",
-    "R134a": "R134a",
-    "R290": "R290",
-    "R404A": "R404A",
-    "R407C": "R407C",
-    "R410A": "R410A",
+    "R22": "R22", "R23": "R23", "R32": "R32", "R134a": "R134a", "R290": "R290",
+    "R404A": "R404A", "R407C": "R407C", "R410A": "R410A",
     "R454B": "HEOS::R32[0.689]&R1234yf[0.311]",
     "R454C": "HEOS::R32[0.215]&R1234yf[0.785]",
     "R507A": "R507A",
     "R513A": "HEOS::R1234yf[0.56]&R134a[0.44]",
-    "R717": "R717",
-    "R744": "R744",
-    "R1234yf": "R1234yf",
-    "R1234ze(E)": "R1234ze(E)",
+    "R717": "R717", "R744": "R744", "R1234yf": "R1234yf", "R1234ze(E)": "R1234ze(E)",
 }
 
 def sort_key(name):
     digits = ""
     for ch in name[1:]:
-        if ch.isdigit():
-            digits += ch
-        else:
-            break
+        if ch.isdigit(): digits += ch
+        else: break
     return (int(digits) if digits else 0, name)
 
 sorted_names = sorted(REFRIGERANTS.keys(), key=sort_key)
@@ -61,37 +49,38 @@ def kpa_to_unit(kpa, unit):
 def is_zeotropic(fluid_string):
     return fluid_string.startswith("HEOS::")
 
-# --- Sidebar ---------------------------------------------------------------
+# --- Sidebar (units only) --------------------------------------------------
 with st.sidebar:
-    st.markdown("### 📋 P-T Table")
-    st.caption("Pressure-temperature reference for refrigerants")
-    st.divider()
-
-    display_name = st.selectbox("Refrigerant", sorted_names)
-    fluid = REFRIGERANTS[display_name]
-
+    st.markdown("### Settings")
     pressure_unit = st.selectbox("Pressure units", list(PRESSURE_UNITS.keys()), index=1)
 
-    st.divider()
-    st.caption("Range")
+# --- Main panel ------------------------------------------------------------
+st.title("P-T Table")
 
-    if display_name == "R744":
-        default_min, default_max = -50, 30
-    elif display_name == "R717":
-        default_min, default_max = -40, 50
-    else:
-        default_min, default_max = -40, 60
-
-    t_min = st.number_input("Min temperature (°C)", value=default_min, step=5, min_value=-100, max_value=150)
-    t_max = st.number_input("Max temperature (°C)", value=default_max, step=5, min_value=-100, max_value=150)
+ic1, ic2 = st.columns([1, 1])
+with ic1:
+    display_name = st.selectbox("Refrigerant", sorted_names)
+fluid = REFRIGERANTS[display_name]
+with ic2:
     t_step = st.selectbox("Step (°C)", [0.5, 1, 2, 5, 10], index=1)
 
-    if t_min >= t_max:
-        st.error("Min temperature must be less than max temperature.")
-        st.stop()
+if display_name == "R744":
+    default_min, default_max = -50, 30
+elif display_name == "R717":
+    default_min, default_max = -40, 50
+else:
+    default_min, default_max = -40, 60
 
-# --- Main panel: header ---------------------------------------------------
-st.title(f"📋 P-T Table — {display_name}")
+rc1, rc2 = st.columns(2)
+with rc1:
+    t_min = st.number_input("Min temp (°C)", value=default_min, step=5, min_value=-100, max_value=150)
+with rc2:
+    t_max = st.number_input("Max temp (°C)", value=default_max, step=5, min_value=-100, max_value=150)
+
+if t_min >= t_max:
+    st.error("Min temperature must be less than max temperature.")
+    st.stop()
+
 st.caption(
     f"Saturation pressure of {display_name} from {t_min} °C to {t_max} °C "
     f"in {t_step} °C steps."
@@ -104,8 +93,8 @@ try:
     p_crit_unit = kpa_to_unit(p_crit_pa / 1000, pressure_unit)
 
     c1, c2 = st.columns(2)
-    c1.metric("Critical temperature", f"{t_crit_c:.1f} °C")
-    c2.metric("Critical pressure", f"{p_crit_unit:.2f} {pressure_unit}")
+    c1.metric("Critical T", f"{t_crit_c:.1f} °C")
+    c2.metric("Critical P", f"{p_crit_unit:.2f} {pressure_unit}")
 
     if t_max > t_crit_c:
         st.info(
@@ -117,7 +106,7 @@ except Exception:
 
 st.divider()
 
-# --- Build the table ------------------------------------------------------
+# --- Build the table -------------------------------------------------------
 zeotropic = is_zeotropic(fluid)
 
 temps = []
@@ -159,28 +148,28 @@ if not rows:
 else:
     df = pd.DataFrame(rows)
 
-    left, mid, right = st.columns([1, 2, 1])
-    with mid:
-        st.dataframe(
-            df,
-            hide_index=True,
-            height=min(600, 35 * (len(df) + 1) + 3),
-        )
+    st.dataframe(
+        df,
+        hide_index=True,
+        use_container_width=True,
+        height=min(600, 35 * (len(df) + 1) + 3),
+    )
 
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Download as CSV",
-            data=csv,
-            file_name=f"PT_table_{display_name}_{t_min}to{t_max}C.csv",
-            mime="text/csv",
-        )
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 Download as CSV",
+        data=csv,
+        file_name=f"PT_table_{display_name}_{t_min}to{t_max}C.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
 
-        if zeotropic:
-            st.info(
-                "**Zeotropic blend.** Bubble point is where liquid begins to "
-                "vaporise; dew point is where the last vapour condenses. The "
-                "temperature glide affects evaporator and condenser performance."
-            )
+    if zeotropic:
+        st.info(
+            "**Zeotropic blend.** Bubble point is where liquid begins to "
+            "vaporise; dew point is where the last vapour condenses. The "
+            "temperature glide affects evaporator and condenser performance."
+        )
 
 st.divider()
 
@@ -202,7 +191,7 @@ with st.expander("How to use this table"):
 
 **For design engineers:**
 
-- Sizing condensers: look up pressure at design ambient + 5-10 K.
+- Sizing condensers: look up pressure at design ambient + 5–10 K.
 - Sizing evaporators: look up pressure at design evap temp.
 - CSV download for spreadsheets and manual calculations.
 

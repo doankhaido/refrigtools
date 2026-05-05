@@ -6,8 +6,8 @@ from CoolProp.CoolProp import PropsSI
 st.set_page_config(
     page_title="Refrigerant Properties · Refrigtools",
     page_icon="🧪",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 render_handbook_link()
 
@@ -75,56 +75,64 @@ def safety_color(s):
 def is_zeotropic(fluid_string):
     return fluid_string.startswith("HEOS::")
 
-# --- Sidebar ---------------------------------------------------------------
+# --- Sidebar (settings only) -----------------------------------------------
 with st.sidebar:
-    st.markdown("### 🧪 Refrigerant Properties")
-    st.caption("Property calculator with compliance overlay")
-    st.divider()
-
-    display_name = st.selectbox("Refrigerant", sorted_names)
-    data = REFRIGERANTS[display_name]
-    fluid = data["fluid"]
-
+    st.markdown("### Settings")
     pressure_unit = st.selectbox("Pressure units", list(PRESSURE_UNITS.keys()), index=1)
-
     mode = st.radio("Calculation mode", ["Saturation (quick)", "Two-property lookup"])
 
-    st.divider()
+# --- Main panel: title + primary inputs ------------------------------------
+st.title("Refrigerant Properties")
 
-    if mode == "Saturation (quick)":
-        sat_input = st.radio("Specify by", ["Temperature", "Pressure"], horizontal=True)
-        if sat_input == "Temperature":
-            sat_temp_c = st.number_input("Temperature (°C)", value=0.0, step=1.0, min_value=-100.0, max_value=150.0)
-            sat_pressure = None
-        else:
-            sat_temp_c = None
-            sat_pressure = st.number_input(
-                f"Pressure ({pressure_unit})",
-                value=kpa_to_unit(500.0, pressure_unit),
-                step=1.0 if pressure_unit == "bar" else 100.0,
-                min_value=0.1,
-            )
+# Primary inputs in main body
+ic1, ic2 = st.columns([2, 1])
+with ic1:
+    display_name = st.selectbox("Refrigerant", sorted_names)
+data = REFRIGERANTS[display_name]
+fluid = data["fluid"]
+
+if mode == "Saturation (quick)":
+    with ic2:
+        sat_input = st.radio("Specify by", ["Temp", "Pressure"], horizontal=True)
+    if sat_input == "Temp":
+        sat_temp_c = st.number_input("Temperature (°C)", value=0.0, step=1.0, min_value=-100.0, max_value=150.0)
+        sat_pressure = None
     else:
-        pair_label = st.selectbox("Input properties", list(INPUT_PAIRS.keys()))
-        prop1, prop2 = INPUT_PAIRS[pair_label]
-        defaults = {
-            "T": 38.0 if display_name == "R744" else 30.0,
-            "P": kpa_to_unit(9200.0 if display_name == "R744" else 1000.0, pressure_unit),
-            "Q": 0.0, "H": 250.0, "S": 1.0,
-        }
-        labels = {
-            "T": "Temperature (°C)", "P": f"Pressure ({pressure_unit})",
-            "Q": "Vapour quality (0=liquid, 1=vapour)",
-            "H": "Enthalpy (kJ/kg)", "S": "Entropy (kJ/kg·K)",
-        }
+        sat_temp_c = None
+        sat_pressure = st.number_input(
+            f"Pressure ({pressure_unit})",
+            value=kpa_to_unit(500.0, pressure_unit),
+            step=1.0 if pressure_unit == "bar" else 100.0,
+            min_value=0.1,
+        )
+else:
+    with ic2:
+        st.write("")  # spacer
+    pair_label = st.selectbox("Input properties", list(INPUT_PAIRS.keys()))
+    prop1, prop2 = INPUT_PAIRS[pair_label]
+    defaults = {
+        "T": 38.0 if display_name == "R744" else 30.0,
+        "P": kpa_to_unit(9200.0 if display_name == "R744" else 1000.0, pressure_unit),
+        "Q": 0.0, "H": 250.0, "S": 1.0,
+    }
+    labels = {
+        "T": "Temperature (°C)", "P": f"Pressure ({pressure_unit})",
+        "Q": "Vapour quality (0=liquid, 1=vapour)",
+        "H": "Enthalpy (kJ/kg)", "S": "Entropy (kJ/kg·K)",
+    }
+    pc1, pc2 = st.columns(2)
+    with pc1:
         val1 = st.number_input(labels[prop1], value=float(defaults[prop1]), step=1.0 if prop1 in ("T", "P", "H") else 0.05)
+    with pc2:
         val2 = st.number_input(labels[prop2], value=float(defaults[prop2]), step=1.0 if prop2 in ("T", "P", "H") else 0.05)
 
-# --- Main panel: header ---------------------------------------------------
-st.title(display_name)
+st.divider()
+
+# --- Compliance overlay (2 columns instead of 4) ---------------------------
+st.subheader(display_name)
 st.caption(data["notes"])
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2 = st.columns(2)
 c1.metric(
     "GWP (AR5)",
     f"{data['gwp_ar5']:,.0f}" if data['gwp_ar5'] >= 1 else f"{data['gwp_ar5']:.2f}",
@@ -132,6 +140,7 @@ c1.metric(
 )
 c2.metric("Safety class", f"{safety_color(data['safety'])} {data['safety']}",
           help="ASHRAE Standard 34. Letter = toxicity (A=lower, B=higher). Number = flammability (1=none, 2L=lower, 2=flammable, 3=higher).")
+c3, c4 = st.columns(2)
 c3.metric("Family", data["family"])
 c4.metric("Phase-down", data["phasedown"])
 
@@ -142,10 +151,9 @@ try:
     p_crit_kpa = p_crit_pa / 1000
     crit_available = True
 
-    cc1, cc2, cc3 = st.columns(3)
+    cc1, cc2 = st.columns(2)
     cc1.metric("Critical T", f"{t_crit_c:.1f} °C")
     cc2.metric("Critical P", f"{kpa_to_unit(p_crit_kpa, pressure_unit):.2f} {pressure_unit}")
-    cc3.metric("Mode", mode.split(" ")[0])
 except Exception:
     crit_available = False
     t_crit_k = None
@@ -160,7 +168,7 @@ def to_si(prop, val, p_unit):
     if prop == "S": return val * 1000
     return val
 
-# --- Calculation ----------------------------------------------------------
+# --- Calculation -----------------------------------------------------------
 if mode == "Saturation (quick)":
     try:
         if sat_temp_c is not None:
@@ -174,12 +182,13 @@ if mode == "Saturation (quick)":
                 d_l = PropsSI("D", "T", t_k, "Q", 0, fluid)
                 d_v = PropsSI("D", "T", t_k, "Q", 1, fluid)
                 st.subheader(f"Saturation at {sat_temp_c:.1f} °C")
-                m1, m2, m3 = st.columns(3)
+                m1, m2 = st.columns(2)
                 m1.metric("Pressure", f"{kpa_to_unit(p/1000, pressure_unit):.3f} {pressure_unit}")
                 m2.metric("Latent heat", f"{h_v - h_l:.1f} kJ/kg")
+                m3, m4 = st.columns(2)
                 m3.metric("Liquid density", f"{d_l:.1f} kg/m³")
-                m4, m5, m6 = st.columns(3)
                 m4.metric("Vapour density", f"{d_v:.2f} kg/m³")
+                m5, m6 = st.columns(2)
                 m5.metric("Liquid enthalpy", f"{h_l:.1f} kJ/kg")
                 m6.metric("Vapour enthalpy", f"{h_v:.1f} kJ/kg")
         else:
@@ -194,15 +203,16 @@ if mode == "Saturation (quick)":
                 d_l = PropsSI("D", "P", p_pa, "Q", 0, fluid)
                 d_v = PropsSI("D", "P", p_pa, "Q", 1, fluid)
                 st.subheader(f"Saturation at {sat_pressure:.3f} {pressure_unit}")
-                m1, m2, m3 = st.columns(3)
+                m1, m2 = st.columns(2)
                 if is_zeotropic(fluid):
                     m1.metric("Bubble point T", f"{t_l - 273.15:.2f} °C", help=f"Glide: {t_v - t_l:.2f} K")
                 else:
                     m1.metric("Saturation T", f"{t_l - 273.15:.2f} °C")
                 m2.metric("Latent heat", f"{h_v - h_l:.1f} kJ/kg")
+                m3, m4 = st.columns(2)
                 m3.metric("Liquid density", f"{d_l:.1f} kg/m³")
-                m4, m5, m6 = st.columns(3)
                 m4.metric("Vapour density", f"{d_v:.2f} kg/m³")
+                m5, m6 = st.columns(2)
                 m5.metric("Liquid enthalpy", f"{h_l:.1f} kJ/kg")
                 m6.metric("Vapour enthalpy", f"{h_v:.1f} kJ/kg")
     except Exception as e:
@@ -240,12 +250,13 @@ else:  # Two-property lookup
         st.subheader(f"State from {pair_label}")
         st.caption(f"{region} · Phase: **{phase_text}**")
 
-        m1, m2, m3 = st.columns(3)
+        m1, m2 = st.columns(2)
         m1.metric("Temperature", f"{state['T'] - 273.15:.2f} °C")
         m2.metric("Pressure", f"{kpa_to_unit(state['P']/1000, pressure_unit):.3f} {pressure_unit}")
+        m3, m4 = st.columns(2)
         m3.metric("Density", f"{state['D']:.2f} kg/m³")
-        m4, m5, m6 = st.columns(3)
         m4.metric("Enthalpy", f"{state['H']/1000:.2f} kJ/kg")
+        m5, m6 = st.columns(2)
         m5.metric("Entropy", f"{state['S']/1000:.4f} kJ/kg·K")
         if state.get("C") is not None:
             m6.metric("Specific heat (cp)", f"{state['C']/1000:.3f} kJ/kg·K")
@@ -274,4 +285,4 @@ Always verify against current standards before specifying refrigerants for insta
 """
     )
 
-st.caption("refrigtools.app · v0.4")
+st.caption("refrigtools.app · v0.5")
